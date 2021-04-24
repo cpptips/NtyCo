@@ -89,12 +89,13 @@ void nty_schedule_sched_sleepdown(nty_coroutine *co, uint64_t msecs) {
 
 	nty_coroutine *co_tmp = RB_FIND(_nty_coroutine_rbtree_sleep, &co->sched->sleeping, co);
 	if (co_tmp != NULL) {
-		RB_REMOVE(_nty_coroutine_rbtree_sleep, &co->sched->sleeping, co_tmp);
+		RB_REMOVE(_nty_coroutine_rbtree_sleep, &co->sched->sleeping, co_tmp);//从休眠树中移除
 	}
 
 	co->sleep_usecs = nty_coroutine_diff_usecs(co->sched->birth, nty_coroutine_usec_now()) + usecs;
 
 	while (msecs) {
+		// 往休眠树中插入协程
 		co_tmp = RB_INSERT(_nty_coroutine_rbtree_sleep, &co->sched->sleeping, co);
 		if (co_tmp) {
 			printf("1111 sleep_usecs %"PRIu64"\n", co->sleep_usecs);
@@ -167,6 +168,7 @@ void nty_schedule_sched_wait(nty_coroutine *co, int fd, unsigned short events, u
 
 	co->fd = fd;
 	co->events = events;
+	// 在这里插入等待树
 	nty_coroutine *co_tmp = RB_INSERT(_nty_coroutine_rbtree_wait, &co->sched->waiting, co);
 
 	assert(co_tmp == NULL);
@@ -176,10 +178,6 @@ void nty_schedule_sched_wait(nty_coroutine *co, int fd, unsigned short events, u
 
 	nty_schedule_sched_sleepdown(co, timeout);
 	
-}
-
-void nty_schedule_cancel_wait(nty_coroutine *co) {
-	RB_REMOVE(_nty_coroutine_rbtree_wait, &co->sched->waiting, co);
 }
 
 void nty_schedule_free(nty_schedule *sched) {
@@ -194,27 +192,25 @@ void nty_schedule_free(nty_schedule *sched) {
 
 	assert(pthread_setspecific(global_sched_key, NULL) == 0);
 }
-
+// 创建调度器
 int nty_schedule_create(int stack_size) {
-
 	int sched_stack_size = stack_size ? stack_size : NTY_CO_MAX_STACKSIZE;
-
 	nty_schedule *sched = (nty_schedule*)calloc(1, sizeof(nty_schedule));
 	if (sched == NULL) {
 		printf("Failed to initialize scheduler\n");
 		return -1;
 	}
 
-	assert(pthread_setspecific(global_sched_key, sched) == 0);
+	assert(pthread_setspecific(global_sched_key, sched) == 0);//初始化调度器key
 
-	sched->poller_fd = nty_epoller_create();
+	sched->poller_fd = nty_epoller_create();//创建epoll
 	if (sched->poller_fd == -1) {
 		printf("Failed to initialize epoller\n");
 		nty_schedule_free(sched);
 		return -2;
 	}
 
-	nty_epoller_ev_register_trigger();
+	nty_epoller_ev_register_trigger();//注册
 
 	sched->stack_size = sched_stack_size;
 	sched->page_size = getpagesize();
@@ -248,6 +244,7 @@ static nty_coroutine *nty_schedule_expired(nty_schedule *sched) {
 	return NULL;
 }
 
+// 只要 等待/忙碌/睡眠/就绪 集合中有任务，调度器就可以调度任务
 static inline int nty_schedule_isdone(nty_schedule *sched) {
 	return (RB_EMPTY(&sched->waiting) && 
 		LIST_EMPTY(&sched->busy) &&
@@ -303,19 +300,22 @@ static int nty_schedule_epoll(nty_schedule *sched) {
 	return 0;
 }
 
+// 调度器运行
 void nty_schedule_run(void) {
-
 	nty_schedule *sched = nty_coroutine_get_sched();
 	if (sched == NULL) return ;
 
 	while (!nty_schedule_isdone(sched)) {
 		
 		// 1. expired --> sleep rbtree
+		// 检查是否有过期的协程，如果有则恢复运行
 		nty_coroutine *expired = NULL;
 		while ((expired = nty_schedule_expired(sched)) != NULL) {
 			nty_coroutine_resume(expired);
 		}
+
 		// 2. ready queue
+		// 检查就绪队列，取出就绪任务
 		nty_coroutine *last_co_ready = TAILQ_LAST(&sched->ready, _nty_coroutine_queue);
 		while (!TAILQ_EMPTY(&sched->ready)) {
 			nty_coroutine *co = TAILQ_FIRST(&sched->ready);
@@ -325,7 +325,7 @@ void nty_schedule_run(void) {
 				nty_coroutine_free(co);
 				break;
 			}
-
+			// 恢复协程
 			nty_coroutine_resume(co);
 			if (co == last_co_ready) break;
 		}

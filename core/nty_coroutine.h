@@ -127,7 +127,7 @@ typedef struct _nty_coroutine_rbtree_wait nty_coroutine_rbtree_wait;
 typedef struct _nty_cpu_ctx {
 	void *esp; //栈指针寄存器(extended stackpointer)
 	void *ebp;
-	void *eip;
+	void *eip; // 存储回调函数入口
 	void *edi;
 	void *esi;
 	void *ebx;
@@ -141,7 +141,7 @@ typedef struct _nty_cpu_ctx {
 // 调度器
 typedef struct _nty_schedule {
 	uint64_t birth;					//调度器的创建时间
-	nty_cpu_ctx ctx;				//cpu上下文 todo:估计是当前正在运行协程的上下文
+	nty_cpu_ctx ctx;				// 调度器中主协程的cpu上下文 
 	void *stack;					//栈指针
 	size_t stack_size;				//栈大小
 	int spawned_coroutines;			//协程id生成器
@@ -149,12 +149,12 @@ typedef struct _nty_schedule {
 	struct _nty_coroutine *curr_thread; //当前协程
 	int page_size;					//页大小
 
-	int poller_fd;
+	int poller_fd;					// 调度器用于检测fd是否就绪的epoll实例
 	int eventfd;
 	struct epoll_event eventlist[NTY_CO_MAX_EVENTS];
 	int nevents;
-
 	int num_new_events;
+
 	nty_coroutine_link busy;
 	nty_coroutine_rbtree_sleep sleeping;	//休眠树
 	nty_coroutine_rbtree_wait waiting;		//等待树
@@ -197,6 +197,7 @@ typedef struct _nty_coroutine {
 
  
 
+// 这个调度器可以看作是一个单例
 extern pthread_key_t global_sched_key;
 static inline nty_schedule *nty_coroutine_get_sched(void) {
 	return pthread_getspecific(global_sched_key);

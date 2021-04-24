@@ -138,6 +138,7 @@ void nty_coroutine_free(nty_coroutine *co) {
 
 }
 
+//todo
 static void nty_coroutine_init(nty_coroutine *co) {
 
 	void **stack = (void **)(co->stack + co->stack_size);
@@ -147,15 +148,18 @@ static void nty_coroutine_init(nty_coroutine *co) {
 
 	co->ctx.esp = (void*)stack - (4 * sizeof(void*));
 	co->ctx.ebp = (void*)stack - (3 * sizeof(void*));
-	co->ctx.eip = (void*)_exec;
-	co->status = BIT(NTY_COROUTINE_STATUS_READY);
+	co->ctx.eip = (void*)_exec; //设置回调函数入口
+	co->status = BIT(NTY_COROUTINE_STATUS_READY); // 准备就绪
 	
 }
 
+// 让出CPU，即切换到主协程
 void nty_coroutine_yield(nty_coroutine *co) {
 	_switch(&co->sched->ctx, &co->ctx);
 }
 
+// todo
+// 建议内核分配空间？ 
 static inline void nty_coroutine_madvise(nty_coroutine *co) {
 
 	size_t current_stack = (co->stack + co->stack_size) - co->ctx.esp;
@@ -164,20 +168,20 @@ static inline void nty_coroutine_madvise(nty_coroutine *co) {
 	if (current_stack < co->last_stack_size &&
 		co->last_stack_size > co->sched->page_size) {
 		size_t tmp = current_stack + (-current_stack & (co->sched->page_size - 1));
-		assert(madvise(co->stack, co->stack_size-tmp, MADV_DONTNEED) == 0);
+		assert(madvise(co->stack, co->stack_size-tmp, MADV_DONTNEED) == 0);//todo
 	}
 	co->last_stack_size = current_stack;
 }
 
 int nty_coroutine_resume(nty_coroutine *co) {
-	
+	// 如果是协程第一次运行，则要进行初始化
 	if (co->status & BIT(NTY_COROUTINE_STATUS_NEW)) {
 		nty_coroutine_init(co);
 	}
 
 	nty_schedule *sched = nty_coroutine_get_sched();
-	sched->curr_thread = co;
-	_switch(&co->ctx, &co->sched->ctx);
+	sched->curr_thread = co; 				//设置当前运行的协程为自己
+	_switch(&co->ctx, &co->sched->ctx); 	// 切换上下文
 	sched->curr_thread = NULL;
 
 	nty_coroutine_madvise(co);
@@ -224,15 +228,18 @@ static void nty_coroutine_sched_key_creator(void) {
 
 // coroutine --> 
 // create 
-//
+// 协程的创建 
 int nty_coroutine_create(nty_coroutine **new_co, proc_coroutine func, void *arg) {
-
+    // key被创建之后，所有线程都可以访问它，各个线程可以往key中写入不同的值
+    // 一键多值技术，可以使各个线程通过key来访问数据的时候，访问的是不同的数据
+    // 实现此功能有一个关键的数据结构TSD池，相当于一个数组，对应有各个线程的私有值
+	// 只初始化一次
 	assert(pthread_once(&sched_key_once, nty_coroutine_sched_key_creator) == 0);
-	nty_schedule *sched = nty_coroutine_get_sched();
 
+	// 获取协程调度器，如果没有则创建
+	nty_schedule *sched = nty_coroutine_get_sched();
 	if (sched == NULL) {
 		nty_schedule_create(0);
-		
 		sched = nty_coroutine_get_sched();
 		if (sched == NULL) {
 			printf("Failed to create scheduler\n");
@@ -240,36 +247,38 @@ int nty_coroutine_create(nty_coroutine **new_co, proc_coroutine func, void *arg)
 		}
 	}
 
+	// 为协程申请空间
 	nty_coroutine *co = calloc(1, sizeof(nty_coroutine));
 	if (co == NULL) {
 		printf("Failed to allocate memory for new coroutine\n");
 		return -2;
 	}
-
-	int ret = posix_memalign(&co->stack, getpagesize(), sched->stack_size);
+	int ret = posix_memalign(&co->stack, getpagesize(), sched->stack_size);//以页对齐分配堆栈空间
 	if (ret) {
 		printf("Failed to allocate stack for new coroutine\n");
 		free(co);
 		return -3;
 	}
 
+	// 为协程赋值
 	co->sched = sched;
-	co->stack_size = sched->stack_size;
-	co->status = BIT(NTY_COROUTINE_STATUS_NEW); //
-	co->id = sched->spawned_coroutines ++;
-	co->func = func;
+	co->stack_size = sched->stack_size;			// 协程栈大小默认为调度器中的值，如有修改也应同步修改上面分配空间
+	co->status = BIT(NTY_COROUTINE_STATUS_NEW); // 每个状态对应一个位，方便计算
+	co->id = sched->spawned_coroutines ++;		// 生成id
+	co->func = func;	// 回调函数						
+	co->arg = arg;		// 回调函数参数	
+	//文件io 
 #if CANCEL_FD_WAIT_UINT64
 	co->fd = -1;
 	co->events = 0;
 #else
 	co->fd_wait = -1;
 #endif
-	co->arg = arg;
-	co->birth = nty_coroutine_usec_now();
-	*new_co = co;
+	
+	co->birth = nty_coroutine_usec_now();	// 创建时间戳
+	*new_co = co;							// 用于参数返回
 
-	TAILQ_INSERT_TAIL(&co->sched->ready, co, ready_next);
-
+	TAILQ_INSERT_TAIL(&co->sched->ready, co, ready_next);//插入到就绪队列中
 	return 0;
 }
 

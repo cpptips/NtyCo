@@ -93,11 +93,12 @@ static int nty_poll_inner(struct pollfd *fds, nfds_t nfds, int timeout) {
 		struct epoll_event ev;
 		ev.events = nty_pollevent_2epoll(fds[i].events);
 		ev.data.fd = fds[i].fd;
-		epoll_ctl(sched->poller_fd, EPOLL_CTL_ADD, fds[i].fd, &ev);
+		epoll_ctl(sched->poller_fd, EPOLL_CTL_ADD, fds[i].fd, &ev);//挂到调度器的epoll上
 
 		co->events = fds[i].events;
-		nty_schedule_sched_wait(co, fds[i].fd, fds[i].events, timeout);
+		nty_schedule_sched_wait(co, fds[i].fd, fds[i].events, timeout); //加入到等待队列中
 	}
+	// 让出CPU，切到主协程中
 	nty_coroutine_yield(co); 
 
 	for (i = 0;i < nfds;i ++) {

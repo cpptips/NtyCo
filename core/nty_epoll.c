@@ -60,13 +60,14 @@ int nty_epoller_ev_register_trigger(void) {
 	nty_schedule *sched = nty_coroutine_get_sched();
 
 	if (!sched->eventfd) {
-		sched->eventfd = eventfd(0, EFD_NONBLOCK);
+		sched->eventfd = eventfd(0, EFD_NONBLOCK);//非阻塞事件
 		assert(sched->eventfd != -1);
 	}
 
 	struct epoll_event ev;
 	ev.events = EPOLLIN;
 	ev.data.fd = sched->eventfd;
+  // 添加到epoll中
 	int ret = epoll_ctl(sched->poller_fd, EPOLL_CTL_ADD, sched->eventfd, &ev);
 
 	assert(ret != -1);
