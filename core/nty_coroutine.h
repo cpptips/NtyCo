@@ -140,14 +140,14 @@ typedef struct _nty_cpu_ctx {
 
 // 调度器
 typedef struct _nty_schedule {
-	uint64_t birth;
-	nty_cpu_ctx ctx;
-	void *stack;
-	size_t stack_size;
-	int spawned_coroutines;
-	uint64_t default_timeout;
-	struct _nty_coroutine *curr_thread;
-	int page_size;
+	uint64_t birth;					//调度器的创建时间
+	nty_cpu_ctx ctx;				//cpu上下文 todo:估计是当前正在运行协程的上下文
+	void *stack;					//栈指针
+	size_t stack_size;				//栈大小
+	int spawned_coroutines;			//协程id生成器
+	uint64_t default_timeout;		//默认超时时间
+	struct _nty_coroutine *curr_thread; //当前协程
+	int page_size;					//页大小
 
 	int poller_fd;
 	int eventfd;
@@ -155,47 +155,44 @@ typedef struct _nty_schedule {
 	int nevents;
 
 	int num_new_events;
-	pthread_mutex_t defer_mutex;
-
-	nty_coroutine_queue ready;
-	nty_coroutine_queue defer;
-
 	nty_coroutine_link busy;
-	
-	nty_coroutine_rbtree_sleep sleeping;
-	nty_coroutine_rbtree_wait waiting;
-
-	//private 
-
+	nty_coroutine_rbtree_sleep sleeping;	//休眠树
+	nty_coroutine_rbtree_wait waiting;		//等待树
+	nty_coroutine_queue ready;				//就绪队列
 } nty_schedule;
 
+/*******************************
+ * 协程作为一个核心结构体
+ * 主要包括两部分内容
+ * 一个是调度器相关的属性
+ * 一个是协程本身的上下文
+********************************/
 typedef struct _nty_coroutine {
-	//private
-	nty_cpu_ctx ctx;
-	proc_coroutine func;
-	void *arg;
-	size_t stack_size;
-	size_t last_stack_size;
-	
+	// 调度相关属性
+	uint64_t id;		 //协程id,用来唯一标识协程实例
+	uint64_t birth;		 //协程的创建时间戳
+	nty_schedule *sched; //调度器指针
+	/// 协程的状态
 	nty_coroutine_status status;
-	nty_schedule *sched;
+	RB_ENTRY(_nty_coroutine) sleep_node; 	//休眠树
+	RB_ENTRY(_nty_coroutine) wait_node;		//等待树
+	TAILQ_ENTRY(_nty_coroutine) ready_next;	//就绪队列
+	uint64_t sleep_usecs; 					//休眠计数器
 
-	uint64_t birth;
-	uint64_t id;
-
+	// 协程上下文相关属性
+	nty_cpu_ctx ctx; 			//cpu上下文
+	proc_coroutine func;		//回调函数
+	void *arg;					//回调函数参数
+	void *stack;				//栈指针
+	size_t stack_size;			//栈大小
+	size_t last_stack_size;		// todo:
+	/// 文件io
 #if CANCEL_FD_WAIT_UINT64
 	int fd;
 	unsigned short events;  //POLL_EVENT
 #else
 	int64_t fd_wait;
-#endif
-
-	void *stack;
-	uint64_t sleep_usecs;
-
-	RB_ENTRY(_nty_coroutine) sleep_node;
-	RB_ENTRY(_nty_coroutine) wait_node;
-	TAILQ_ENTRY(_nty_coroutine) ready_next;
+#endif	
 } nty_coroutine;
 
  

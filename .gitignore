@@ -2,3 +2,5 @@ _build/
 bin/
 objs/
 lib/
+.vscode/settings.json
+.vscode/sftp.json
