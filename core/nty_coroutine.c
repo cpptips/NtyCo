@@ -115,12 +115,8 @@ static void _exec(void *lt) {
 	nty_coroutine *co = (nty_coroutine*)lt;
 	co->func(co->arg);
 	co->status |= (BIT(NTY_COROUTINE_STATUS_EXITED) | BIT(NTY_COROUTINE_STATUS_FDEOF) | BIT(NTY_COROUTINE_STATUS_DETACH));
-#if 1
 	nty_coroutine_yield(co);
-#else
-	co->ops = 0;
-	_switch(&co->sched->ctx, &co->ctx);
-#endif
+
 }
 
 extern int nty_schedule_create(int stack_size);
@@ -157,7 +153,6 @@ static void nty_coroutine_init(nty_coroutine *co) {
 }
 
 void nty_coroutine_yield(nty_coroutine *co) {
-	co->ops = 0;
 	_switch(&co->sched->ctx, &co->ctx);
 }
 
@@ -196,18 +191,6 @@ int nty_coroutine_resume(nty_coroutine *co) {
 	} 
 #endif
 	return 0;
-}
-
-
-void nty_coroutine_renice(nty_coroutine *co) {
-	co->ops ++;
-#if 1
-	if (co->ops < 5) return ;
-#endif
-	printf("nty_coroutine_renice\n");
-	TAILQ_INSERT_TAIL(&nty_coroutine_get_sched()->ready, co, ready_next);
-	printf("nty_coroutine_renice 111\n");
-	nty_coroutine_yield(co);
 }
 
 

@@ -123,9 +123,9 @@ typedef struct _nty_coroutine_queue nty_coroutine_queue;
 typedef struct _nty_coroutine_rbtree_sleep nty_coroutine_rbtree_sleep;
 typedef struct _nty_coroutine_rbtree_wait nty_coroutine_rbtree_wait;
 
-
+// 协程上下文
 typedef struct _nty_cpu_ctx {
-	void *esp; //
+	void *esp; //栈指针寄存器(extended stackpointer)
 	void *ebp;
 	void *eip;
 	void *edi;
@@ -138,7 +138,7 @@ typedef struct _nty_cpu_ctx {
 	void *r5;
 } nty_cpu_ctx;
 
-///
+// 调度器
 typedef struct _nty_schedule {
 	uint64_t birth;
 	nty_cpu_ctx ctx;
@@ -170,13 +170,10 @@ typedef struct _nty_schedule {
 } nty_schedule;
 
 typedef struct _nty_coroutine {
-
 	//private
-	
 	nty_cpu_ctx ctx;
 	proc_coroutine func;
 	void *arg;
-	void *data;
 	size_t stack_size;
 	size_t last_stack_size;
 	
@@ -185,62 +182,23 @@ typedef struct _nty_coroutine {
 
 	uint64_t birth;
 	uint64_t id;
+
 #if CANCEL_FD_WAIT_UINT64
 	int fd;
 	unsigned short events;  //POLL_EVENT
 #else
 	int64_t fd_wait;
 #endif
-	char funcname[64];
-	struct _nty_coroutine *co_join;
 
-	void **co_exit_ptr;
 	void *stack;
-	void *ebp;
-	uint32_t ops;
 	uint64_t sleep_usecs;
 
 	RB_ENTRY(_nty_coroutine) sleep_node;
 	RB_ENTRY(_nty_coroutine) wait_node;
-
-	LIST_ENTRY(_nty_coroutine) busy_next;
-
 	TAILQ_ENTRY(_nty_coroutine) ready_next;
-	TAILQ_ENTRY(_nty_coroutine) defer_next;
-	TAILQ_ENTRY(_nty_coroutine) cond_next;
-
-	TAILQ_ENTRY(_nty_coroutine) io_next;
-	TAILQ_ENTRY(_nty_coroutine) compute_next;
-
-	struct {
-		void *buf;
-		size_t nbytes;
-		int fd;
-		int ret;
-		int err;
-	} io;
-
-	struct _nty_coroutine_compute_sched *compute_sched;
-	int ready_fds;
-	struct pollfd *pfds;
-	nfds_t nfds;
 } nty_coroutine;
 
-
-typedef struct _nty_coroutine_compute_sched {
-	nty_cpu_ctx ctx;
-	nty_coroutine_queue coroutines;
-
-	nty_coroutine *curr_coroutine;
-
-	pthread_mutex_t run_mutex;
-	pthread_cond_t run_cond;
-
-	pthread_mutex_t co_mutex;
-	LIST_ENTRY(_nty_coroutine_compute_sched) compute_next;
-	
-	nty_coroutine_compute_status compute_status;
-} nty_coroutine_compute_sched;
+ 
 
 extern pthread_key_t global_sched_key;
 static inline nty_schedule *nty_coroutine_get_sched(void) {
